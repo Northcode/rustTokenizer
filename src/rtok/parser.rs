@@ -52,8 +52,8 @@ impl <T,N> Parser<T,N> {
     fn determine_action(&self) -> ParseAction {
         if let Some(idx) = self.reductions.iter()
             .enumerate()
-            .filter(|(i,k)| k.0(&self.pstack))
-            .map(|(i,k)| i)
+            .filter(|(_,k)| k.0(&self.pstack))
+            .map(|(i,_)| i)
             .nth(0) {
                 ParseAction::Reduce(idx)
         }
@@ -77,7 +77,6 @@ impl <T,N> Parser<T,N> {
                 }).collect();
                 Err(ParseError::EOF)
             }
-            _ => Err(ParseError::NoActions),
         }
     }
 }
@@ -117,6 +116,7 @@ macro_rules! expect {
     }};
 }
 
+#[allow(unused_macros)]
 macro_rules! reduction_inner {
     ($inner:expr) => {
         return Ok(ParseValue::Reduced($inner))
@@ -133,6 +133,7 @@ macro_rules! reduction_inner {
     };
 }
 
+#[allow(unused_macros)]
 macro_rules! reduction {
     ($inner:expr; $id:ident -> $pat:pat) => {
         |stack| {
@@ -149,3 +150,4 @@ macro_rules! reduction {
         }
     };
 }
+

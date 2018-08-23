@@ -18,6 +18,7 @@ pub mod postproc {
             PostprocErr { on_type: token_type, error }
         }
 
+        #[allow(dead_code)]
         pub fn make<T>(token_type: TokenTypeId, error: String) -> Result<T,PostprocErr> {
             Err(PostprocErr::new(token_type, error))
         }

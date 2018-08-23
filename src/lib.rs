@@ -207,7 +207,7 @@ mod lib {
 
         #[derive(Debug)]
         pub enum TestAst {
-            Int(i32), Float(f32), Add(TestAstPtr, TestAstPtr), Empty
+            Int(i32), Float(f32), Add(TestAstPtr, TestAstPtr), Sub(TestAstPtr, TestAstPtr), Empty
         }
 
         impl Into<TestAst> for TestTokenValue {
@@ -222,7 +222,7 @@ mod lib {
 
         #[test]
         fn test_parser() {
-            let tokenvals = tokenize_str("1 2 +");
+            let tokenvals = tokenize_str("1 2 + 3 -");
 
             assert_eq!(tokenvals.get(2), Some(&TestTokenValue::Op('+')));
 
@@ -248,8 +248,16 @@ mod lib {
 
                 // rule for add
                 parser.add_rule(
-                    expect!(t T_::Op('+'),n N_::Int(_),n N_::Int(_)),
+                    expect!(t T_::Op('+'),n _,n _),
                     reduction!(N_::Add(Box::new(left), Box::new(right)); 
+                               _o -> PT_(T_::Op(_)), 
+                               left -> PR_(left),
+                               right -> PR_(right)));
+
+                // rule for sub
+                parser.add_rule(
+                    expect!(t T_::Op('-'),n _, n _),
+                    reduction!(N_::Sub(Box::new(left), Box::new(right)); 
                                _o -> PT_(T_::Op(_)), 
                                left -> PR_(left),
                                right -> PR_(right)));
@@ -260,7 +268,7 @@ mod lib {
             }
 
             match parser.output.last() {
-                Some(&TestAst::Add(..)) => {
+                Some(&TestAst::Sub(..)) => {
                     assert!(true)
                 }
                 _ => assert!(false)
