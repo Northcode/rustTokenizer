@@ -1,39 +1,18 @@
-#[derive(Debug)]
-pub enum TokenValue {
-    Int, Float, Op, Empty
-}
-
-type AstNodePtr = Box<AstNode>;
 
 #[derive(Debug)]
-pub enum AstNode {
-    Int, Float, Add(AstNodePtr, AstNodePtr), Empty
+pub enum ParseValue<T,N> {
+    Token(T),
+    Reduced(N),
 }
 
-#[derive(Debug)]
-pub enum ParseValue {
-    Token(TokenValue),
-    Reduced(AstNode),
-}
+pub struct Parser<T,N> {
 
-impl Into<AstNode> for ParseValue {
+    input: Vec<T>,
+    pstack: Vec<ParseValue<T,N>>,
+    pub output: Vec<N>,
 
-    fn into(self) -> AstNode {
-        match self {
-            ParseValue::Token(TokenValue::Int) => AstNode::Int,
-            ParseValue::Token(TokenValue::Float) => AstNode::Float,
-            _ => AstNode::Empty
-        }
-    }
-}
-
-pub struct Parser {
-    input: Vec<TokenValue>,
-    pstack: Vec<ParseValue>,
-    pub output: Vec<AstNode>,
-
-    reductions: Vec<(Box<Fn(&Vec<ParseValue>) -> bool>, 
-                     Box<Fn(&mut Vec<ParseValue>) -> Result<ParseValue, ParseError>>)>
+    reductions: Vec<(Box<Fn(&Vec<ParseValue<T,N>>) -> bool>, 
+                     Box<Fn(&mut Vec<ParseValue<T,N>>) -> Result<ParseValue<T,N>, ParseError>>)>
 }
 
 enum ParseAction {
@@ -43,17 +22,13 @@ enum ParseAction {
 }
 
 pub enum ParseError {
-    EOF, NoActions, InvalidReduction(usize),
+    EOF, NoActions, InvalidReduction(usize), InvalidToken
 }
 
-impl Parser {
+impl <T,N> Parser<T,N> {
 
-    pub fn new(input: Vec<TokenValue>) -> Parser {
+    pub fn new(input: Vec<T>) -> Parser<T,N> {
         Parser { input, pstack: Vec::new(), output: Vec::new(), reductions: Vec::new() }
-    }
-
-    pub fn debug_print_stack(&self) {
-        println!("stack: {:?}", self.pstack);
     }
 
     fn shift(&mut self) -> Result<(), ParseError> {
@@ -63,15 +38,9 @@ impl Parser {
     }
 
     pub fn add_rule<C,R>(&mut self, checker: C, reduction: R)
-    where C : 'static + Fn(&Vec<ParseValue>) -> bool , R: 'static + Fn(&mut Vec<ParseValue>) -> Result<ParseValue, ParseError> {
+    where C : 'static + Fn(&Vec<ParseValue<T,N>>) -> bool , R: 'static + Fn(&mut Vec<ParseValue<T,N>>) -> Result<ParseValue<T,N>, ParseError> {
         self.reductions.push((Box::new(checker), Box::new(reduction)));
     }
-
-    // fn reduce<R>(&mut self, reducer: R) -> Result<(), ParseError> where R : Fn(&mut Vec<ParseValue>) -> Result<ParseValue, ParseError> {
-    //     let res = reducer(&mut self.pstack)?;
-    //     self.pstack.push(res);
-    //     Ok(())
-    // }
 
     fn reduce(&mut self, idx: usize) -> Result<(), ParseError> {
         let reduction = self.reductions.get(idx).ok_or(ParseError::InvalidReduction(idx))?;
@@ -111,4 +80,13 @@ impl Parser {
             _ => Err(ParseError::NoActions),
         }
     }
+}
+
+extern crate std;
+
+impl <T,N> Parser<T,N> where T: std::fmt::Debug, N : std::fmt::Debug {
+    pub fn debug_print_stack(&self) {
+        println!("stack: {:?}", self.pstack);
+    }
+
 }

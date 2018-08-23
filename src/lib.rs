@@ -200,8 +200,24 @@ mod lib {
             tokenvals
         }
 
-        use rtok::parser::{Parser,AstNode};
-        use rtok::parser::TokenValue;
+        use rtok::parser::{Parser};
+
+        type TestAstPtr = Box<TestAst>;
+
+        #[derive(Debug)]
+        pub enum TestAst {
+            Int(i32), Float(f32), Add(TestAstPtr, TestAstPtr), Empty
+        }
+
+        impl Into<TestAst> for TestTokenValue {
+            fn into(self) -> TestAst {
+                match self {
+                    TestTokenValue::Int(i) => TestAst::Int(i),
+                    TestTokenValue::Float(i) => TestAst::Float(i),
+                    _ => TestAst::Empty
+                }
+            }
+        }
 
         #[test]
         fn test_parser() {
@@ -209,22 +225,20 @@ mod lib {
 
             assert_eq!(tokenvals.get(2), Some(&TestTokenValue::Op('+')));
 
-            let mut parser = Parser::new(tokenvals.into_iter().rev().map(|i| match i {
-                TestTokenValue::Int(_) => TokenValue::Int,
-                TestTokenValue::Float(_) => TokenValue::Float,
-                TestTokenValue::Op(_) => TokenValue::Op,
-                _ => TokenValue::Empty
-            }).collect());
-
+            let mut parser : Parser<TestTokenValue, TestAst> = Parser::new(tokenvals.into_iter().rev().collect());
 
             {
                 use rtok::parser::{ParseError, ParseValue};
                 // rule for ints
                 parser.add_rule(|stack| {
-                    stack.last().map_or(false, |i| match i { &ParseValue::Token(TokenValue::Int) => true, _ => false })
+                    stack.last().map_or(false, |i| match i { &ParseValue::Token(TestTokenValue::Int(_)) => true, _ => false })
                 }, |stack| {
-                    let _last = stack.pop().ok_or(ParseError::EOF)?;
-                    Ok(ParseValue::Reduced(AstNode::Int))
+                    let last = stack.pop().ok_or(ParseError::EOF)?;
+                    if let ParseValue::Token(TestTokenValue::Int(i)) = last {
+                        Ok(ParseValue::Reduced(TestAst::Int(i)))
+                    } else {
+                        Err(ParseError::InvalidToken)
+                    }
                 });
 
                 // rule for add
@@ -233,22 +247,29 @@ mod lib {
 
                     let lasttwo = &stack[stack.len()-3..stack.len()];
                     (match &lasttwo[2] {
-                        &ParseValue::Token(TokenValue::Op) => true,
+                        &ParseValue::Token(TestTokenValue::Op('+')) => true,
                         _ => false
                     }) && (match &lasttwo[1] {
-                        &ParseValue::Reduced(AstNode::Int) => true,
-                        &ParseValue::Reduced(AstNode::Float) => true,
+                        &ParseValue::Reduced(TestAst::Int(_)) => true,
+                        &ParseValue::Reduced(TestAst::Float(_)) => true,
                         _ => false
                     }) && (match &lasttwo[0] {
-                        &ParseValue::Reduced(AstNode::Int) => true,
-                        &ParseValue::Reduced(AstNode::Float) => true,
+                        &ParseValue::Reduced(TestAst::Int(_)) => true,
+                        &ParseValue::Reduced(TestAst::Float(_)) => true,
                         _ => false
                     })
                 }, |stack| {
                     let _op = stack.pop().ok_or(ParseError::EOF)?;
                     let left = stack.pop().ok_or(ParseError::EOF)?;
                     let right = stack.pop().ok_or(ParseError::EOF)?;
-                    Ok(ParseValue::Reduced(AstNode::Add(Box::new(right.into()), Box::new(left.into()))))
+
+                    if let ParseValue::Reduced(left) = left {
+                        if let ParseValue::Reduced(right) = right {
+                            return Ok(ParseValue::Reduced(TestAst::Add(Box::new(left), Box::new(right))))
+                        }
+                    }
+
+                    return Err(ParseError::InvalidToken)
                 });
             }
 
@@ -257,7 +278,7 @@ mod lib {
             }
 
             match parser.output.last() {
-                Some(&AstNode::Add(..)) => {
+                Some(&TestAst::Add(..)) => {
                     assert!(true)
                 }
                 _ => assert!(false)
