@@ -68,10 +68,9 @@ impl Parser {
     }
 
     fn determine_reduce_add(vals: &Vec<ParseValue>) -> bool {
-        println!("vals len: {}", vals.len());
         if vals.len() < 3 { return false }
+
         let lasttwo = &vals[vals.len()-3..vals.len()];
-        println!("last vals: {:?}", lasttwo);
         (match &lasttwo[2] {
             &ParseValue::Token(TokenValue::Op) => true,
             _ => false

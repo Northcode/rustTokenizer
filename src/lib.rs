@@ -193,7 +193,7 @@ mod lib {
 
             let tokenvals : Vec<TestTokenValue> = tokens.into_iter()
                 .map(|i| postproc.run_on(i))
-                .flatten()
+                .flat_map(|i| { i.into_iter() })
                 .filter(|i| i != &TestTokenValue::Whitespace)
                 .collect();
 
