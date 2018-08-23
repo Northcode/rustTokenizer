@@ -1,11 +1,12 @@
 extern crate regex;
 
+mod rtok;
+
 #[cfg(test)]
 mod lib {
 
-    mod tokenizer;
-    use self::tokenizer::tokenizer::{Tokenizer, MatcherPriority, Token};
-    use self::tokenizer::postproc::{BasicPostProcessor, PostProcessor, PostprocErr};
+    use rtok::tokenizer::{Tokenizer, MatcherPriority, Token};
+    use rtok::tokenizer::postproc::{BasicPostProcessor, PostProcessor, PostprocErr};
 
     #[test]
     fn test_whitespace() {
