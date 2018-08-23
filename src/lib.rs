@@ -236,15 +236,9 @@ mod lib {
             {
                 use rtok::parser::{ParseError, ParseValue};
 
-                // rule for floats
-                parser.add_rule(
-                    expect!(t T_::Float(_)),
-                    reduction!(N_::Float(i); i -> PT_(T_::Float(i))));
-                
-                // rule for ints
-                parser.add_rule(
-                    expect!(t T_::Int(_)), 
-                    reduction!(N_::Int(i); i -> PT_(T_::Int(i))));
+                // auto add rules for tokens that impl Into<TestAst>
+                // needs patterns that match the tokens
+                wrap_intos!(parser; T_::Float(_), T_::Int(_));
 
                 // rule for add
                 parser.add_rule(

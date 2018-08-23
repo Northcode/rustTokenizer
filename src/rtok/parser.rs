@@ -119,6 +119,7 @@ macro_rules! expect {
 }
 
 #[allow(unused_macros)]
+#[macro_export]
 macro_rules! reduction_inner {
     ($inner:expr) => {
         return Ok(ParseValue::Reduced($inner))
@@ -136,6 +137,7 @@ macro_rules! reduction_inner {
 }
 
 #[allow(unused_macros)]
+#[macro_export]
 macro_rules! reduction {
     ($inner:expr; $id:ident -> $pat:pat) => {
         |stack| {
@@ -153,3 +155,13 @@ macro_rules! reduction {
     };
 }
 
+#[macro_export]
+macro_rules! wrap_intos {
+    ($parser:ident; $($wrapper:pat),*) => {
+        $(
+            $parser.add_rule(
+                expect!(t $wrapper),
+                reduction!(i.into(); i -> ParseValue::Token(i)));
+        )*
+    }
+}
