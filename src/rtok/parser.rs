@@ -31,7 +31,9 @@ pub struct Parser {
     input: Vec<TokenValue>,
     pstack: Vec<ParseValue>,
     pub output: Vec<AstNode>,
-    // reductions: Vec<(Box<Fn(&Vec<ParseValue>) -> bool>, Box<Fn(&mut Vec<ParseValue>) -> Result<ParseValue, ParseError>>)>
+
+    reductions: Vec<(Box<Fn(&Vec<ParseValue>) -> bool>, 
+                     Box<Fn(&mut Vec<ParseValue>) -> Result<ParseValue, ParseError>>)>
 }
 
 enum ParseAction {
@@ -41,13 +43,13 @@ enum ParseAction {
 }
 
 pub enum ParseError {
-    EOF, NoActions
+    EOF, NoActions, InvalidReduction(usize),
 }
 
 impl Parser {
 
     pub fn new(input: Vec<TokenValue>) -> Parser {
-        Parser { input, pstack: Vec::new(), output: Vec::new() }
+        Parser { input, pstack: Vec::new(), output: Vec::new(), reductions: Vec::new() }
     }
 
     pub fn debug_print_stack(&self) {
@@ -60,68 +62,45 @@ impl Parser {
         Ok(())
     }
 
-    fn reduce_add(vals: &mut Vec<ParseValue>) -> Result<ParseValue, ParseError> {
-        let _op = vals.pop().ok_or(ParseError::EOF)?;
-        let left = vals.pop().ok_or(ParseError::EOF)?;
-        let right = vals.pop().ok_or(ParseError::EOF)?;
-        Ok(ParseValue::Reduced(AstNode::Add(Box::new(right.into()), Box::new(left.into()))))
+    pub fn add_rule<C,R>(&mut self, checker: C, reduction: R)
+    where C : 'static + Fn(&Vec<ParseValue>) -> bool , R: 'static + Fn(&mut Vec<ParseValue>) -> Result<ParseValue, ParseError> {
+        self.reductions.push((Box::new(checker), Box::new(reduction)));
     }
 
-    fn determine_reduce_add(vals: &Vec<ParseValue>) -> bool {
-        if vals.len() < 3 { return false }
+    // fn reduce<R>(&mut self, reducer: R) -> Result<(), ParseError> where R : Fn(&mut Vec<ParseValue>) -> Result<ParseValue, ParseError> {
+    //     let res = reducer(&mut self.pstack)?;
+    //     self.pstack.push(res);
+    //     Ok(())
+    // }
 
-        let lasttwo = &vals[vals.len()-3..vals.len()];
-        (match &lasttwo[2] {
-            &ParseValue::Token(TokenValue::Op) => true,
-            _ => false
-        }) && (match &lasttwo[1] {
-            &ParseValue::Reduced(AstNode::Int) => true,
-            &ParseValue::Reduced(AstNode::Float) => true,
-            _ => false
-        }) && (match &lasttwo[0] {
-            &ParseValue::Reduced(AstNode::Int) => true,
-            &ParseValue::Reduced(AstNode::Float) => true,
-            _ => false
-        })
-    }
-
-    fn reduce_int(vals: &mut Vec<ParseValue>) -> Result<ParseValue, ParseError> {
-        let _last = vals.pop().ok_or(ParseError::EOF)?;
-        Ok(ParseValue::Reduced(AstNode::Int))
-    }
-
-    fn determine_reduce_int(vals: &Vec<ParseValue>) -> bool {
-        vals.last().map_or(false, |i| match i { &ParseValue::Token(TokenValue::Int) => true, _ => false })
-    }
-
-    fn reduce<R>(&mut self, reducer: R) -> Result<(), ParseError> where R : Fn(&mut Vec<ParseValue>) -> Result<ParseValue, ParseError> {
-        let res = reducer(&mut self.pstack)?;
+    fn reduce(&mut self, idx: usize) -> Result<(), ParseError> {
+        let reduction = self.reductions.get(idx).ok_or(ParseError::InvalidReduction(idx))?;
+        let res = reduction.1(&mut self.pstack)?;
         self.pstack.push(res);
         Ok(())
     }
 
+    fn determine_action(&self) -> ParseAction {
+        if let Some(idx) = self.reductions.iter()
+            .enumerate()
+            .filter(|(i,k)| k.0(&self.pstack))
+            .map(|(i,k)| i)
+            .nth(0) {
+                ParseAction::Reduce(idx)
+        }
+        else if self.input.len() > 0 {
+            ParseAction::Shift
+        } else {
+            ParseAction::Stop
+        }
+    }
+
     pub fn step(&mut self) -> Result<(), ParseError> {
-        let action = {
-            if Parser::determine_reduce_add(&self.pstack) {
-                println!("reduce add");
-                ParseAction::Reduce(0)
-            } else if Parser::determine_reduce_int(&self.pstack) {
-                println!("reduce int");
-                ParseAction::Reduce(1)
-            } else {
-                if self.input.len() > 0 {
-                    println!("shift");
-                    ParseAction::Shift
-                } else {
-                    ParseAction::Stop
-                }
-            }  
-        };
+        let action = self.determine_action();
 
         match action {
             ParseAction::Shift => self.shift(),
-            ParseAction::Reduce(0) => self.reduce(Parser::reduce_add),
-            ParseAction::Reduce(1) => self.reduce(Parser::reduce_int),
+            ParseAction::Reduce(n) => self.reduce(n),
             ParseAction::Stop => {
                 self.output = self.pstack.drain(..).flat_map(|i| match i {
                     ParseValue::Reduced(a) => Some(a),

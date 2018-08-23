@@ -216,6 +216,42 @@ mod lib {
                 _ => TokenValue::Empty
             }).collect());
 
+
+            {
+                use rtok::parser::{ParseError, ParseValue};
+                // rule for ints
+                parser.add_rule(|stack| {
+                    stack.last().map_or(false, |i| match i { &ParseValue::Token(TokenValue::Int) => true, _ => false })
+                }, |stack| {
+                    let _last = stack.pop().ok_or(ParseError::EOF)?;
+                    Ok(ParseValue::Reduced(AstNode::Int))
+                });
+
+                // rule for add
+                parser.add_rule(|stack| {
+                    if stack.len() < 3 { return false }
+
+                    let lasttwo = &stack[stack.len()-3..stack.len()];
+                    (match &lasttwo[2] {
+                        &ParseValue::Token(TokenValue::Op) => true,
+                        _ => false
+                    }) && (match &lasttwo[1] {
+                        &ParseValue::Reduced(AstNode::Int) => true,
+                        &ParseValue::Reduced(AstNode::Float) => true,
+                        _ => false
+                    }) && (match &lasttwo[0] {
+                        &ParseValue::Reduced(AstNode::Int) => true,
+                        &ParseValue::Reduced(AstNode::Float) => true,
+                        _ => false
+                    })
+                }, |stack| {
+                    let _op = stack.pop().ok_or(ParseError::EOF)?;
+                    let left = stack.pop().ok_or(ParseError::EOF)?;
+                    let right = stack.pop().ok_or(ParseError::EOF)?;
+                    Ok(ParseValue::Reduced(AstNode::Add(Box::new(right.into()), Box::new(left.into()))))
+                });
+            }
+
             while parser.step().is_ok() {
                 parser.debug_print_stack();
             }
