@@ -1,5 +1,6 @@
 extern crate regex;
 
+#[macro_use]
 mod rtok;
 
 #[cfg(test)]
@@ -227,50 +228,31 @@ mod lib {
 
             let mut parser : Parser<TestTokenValue, TestAst> = Parser::new(tokenvals.into_iter().rev().collect());
 
+            use self::TestTokenValue as T_;
+            use self::TestAst as N_;
+            use rtok::parser::ParseValue::Token as PT_;
+            use rtok::parser::ParseValue::Reduced as PR_;
+
             {
                 use rtok::parser::{ParseError, ParseValue};
+
+                // rule for floats
+                parser.add_rule(
+                    expect!(t T_::Float(_)),
+                    reduction!(N_::Float(i); i -> PT_(T_::Float(i))));
+                
                 // rule for ints
-                parser.add_rule(|stack| {
-                    stack.last().map_or(false, |i| match i { &ParseValue::Token(TestTokenValue::Int(_)) => true, _ => false })
-                }, |stack| {
-                    let last = stack.pop().ok_or(ParseError::EOF)?;
-                    if let ParseValue::Token(TestTokenValue::Int(i)) = last {
-                        Ok(ParseValue::Reduced(TestAst::Int(i)))
-                    } else {
-                        Err(ParseError::InvalidToken)
-                    }
-                });
+                parser.add_rule(
+                    expect!(t T_::Int(_)), 
+                    reduction!(N_::Int(i); i -> PT_(T_::Int(i))));
 
                 // rule for add
-                parser.add_rule(|stack| {
-                    if stack.len() < 3 { return false }
-
-                    let lasttwo = &stack[stack.len()-3..stack.len()];
-                    (match &lasttwo[2] {
-                        &ParseValue::Token(TestTokenValue::Op('+')) => true,
-                        _ => false
-                    }) && (match &lasttwo[1] {
-                        &ParseValue::Reduced(TestAst::Int(_)) => true,
-                        &ParseValue::Reduced(TestAst::Float(_)) => true,
-                        _ => false
-                    }) && (match &lasttwo[0] {
-                        &ParseValue::Reduced(TestAst::Int(_)) => true,
-                        &ParseValue::Reduced(TestAst::Float(_)) => true,
-                        _ => false
-                    })
-                }, |stack| {
-                    let _op = stack.pop().ok_or(ParseError::EOF)?;
-                    let left = stack.pop().ok_or(ParseError::EOF)?;
-                    let right = stack.pop().ok_or(ParseError::EOF)?;
-
-                    if let ParseValue::Reduced(left) = left {
-                        if let ParseValue::Reduced(right) = right {
-                            return Ok(ParseValue::Reduced(TestAst::Add(Box::new(left), Box::new(right))))
-                        }
-                    }
-
-                    return Err(ParseError::InvalidToken)
-                });
+                parser.add_rule(
+                    expect!(t T_::Op('+'),n N_::Int(_),n N_::Int(_)),
+                    reduction!(N_::Add(Box::new(left), Box::new(right)); 
+                               _o -> PT_(T_::Op(_)), 
+                               left -> PR_(left),
+                               right -> PR_(right)));
             }
 
             while parser.step().is_ok() {

@@ -22,7 +22,7 @@ enum ParseAction {
 }
 
 pub enum ParseError {
-    EOF, NoActions, InvalidReduction(usize), InvalidToken
+    EOF, NoActions, InvalidReduction(usize), InvalidToken, NotImpl
 }
 
 impl <T,N> Parser<T,N> {
@@ -89,4 +89,63 @@ impl <T,N> Parser<T,N> where T: std::fmt::Debug, N : std::fmt::Debug {
         println!("stack: {:?}", self.pstack);
     }
 
+}
+
+#[macro_export]
+macro_rules! expect_inner {
+    (t $tok:pat) => {&ParseValue::Token($tok)};
+    (n $tok:pat) => {&ParseValue::Reduced($tok)};
+}
+
+#[macro_export]
+macro_rules! expect {
+    ($($type:ident $thing:pat),*) => {|stack| {
+        let mut itr = stack.iter().rev();
+
+        let mut is_match = true;
+
+        $({
+            {
+                is_match = is_match && (match itr.next() {
+                    Some(expect_inner!($type $thing)) => true,
+                    _ => false
+                })
+            }
+        })+
+
+            return is_match
+    }};
+}
+
+macro_rules! reduction_inner {
+    ($inner:expr) => {
+        return Ok(ParseValue::Reduced($inner))
+    };
+    ($stack:ident $inner:expr; $id:ident $pat:pat) => {
+        if let $pat = $stack.pop().ok_or(ParseError::EOF)? {
+            reduction_inner!($inner);
+        }
+    };
+    ($stack:ident $inner:expr; $id_first:ident $pat_first:pat, $($id_tail:ident $pat_tail:pat),*) => {
+        if let $pat_first = $stack.pop().ok_or(ParseError::EOF)? {
+            reduction_inner!($stack $inner; $($id_tail $pat_tail),*)
+        }
+    };
+}
+
+macro_rules! reduction {
+    ($inner:expr; $id:ident -> $pat:pat) => {
+        |stack| {
+            reduction_inner!(stack $inner; $id $pat);
+
+            return Err(ParseError::InvalidToken);
+        }
+    };
+    ($inner:expr; $id_first:ident -> $pat_first:pat, $($id_tail:ident -> $pat_tail:pat),*) => {
+        |stack| {
+            reduction_inner!(stack $inner; $id_first $pat_first, $($id_tail $pat_tail),*);
+
+            return Err(ParseError::InvalidToken);
+        }
+    };
 }
