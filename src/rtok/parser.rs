@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 #[derive(Debug)]
 pub enum TokenValue {
     Int, Float, Op, Empty
@@ -29,48 +27,41 @@ impl Into<AstNode> for ParseValue {
     }
 }
 
-type ParserState = usize;
-
 pub struct Parser {
     input: Vec<TokenValue>,
-    pub pstack: Vec<ParseValue>,
-    state: ParserState,
-    output: Vec<AstNode>,
-
+    pstack: Vec<ParseValue>,
+    pub output: Vec<AstNode>,
     // reductions: Vec<(Box<Fn(&Vec<ParseValue>) -> bool>, Box<Fn(&mut Vec<ParseValue>) -> Result<ParseValue, ParseError>>)>
 }
 
-pub enum ParseAction {
+enum ParseAction {
     Reduce(usize),
     Shift,
     Stop,
-    Error,
 }
-
-pub enum ParseResult {
-    Good,
-    Stop
-}
-    
 
 pub enum ParseError {
-    EOF, NotImpl, NoReductions, NoActions
+    EOF, NoActions
 }
 
 impl Parser {
 
     pub fn new(input: Vec<TokenValue>) -> Parser {
-        Parser { input, pstack: Vec::new(), state: 0, output: Vec::new() }
+        Parser { input, pstack: Vec::new(), output: Vec::new() }
     }
 
-    pub fn shift(&mut self) -> Result<(), ParseError> {
+    pub fn debug_print_stack(&self) {
+        println!("stack: {:?}", self.pstack);
+    }
+
+    fn shift(&mut self) -> Result<(), ParseError> {
         let val = self.input.pop().ok_or(ParseError::EOF)?;
         self.pstack.push(ParseValue::Token(val));
         Ok(())
     }
 
     fn reduce_add(vals: &mut Vec<ParseValue>) -> Result<ParseValue, ParseError> {
-        let op = vals.pop().ok_or(ParseError::EOF)?;
+        let _op = vals.pop().ok_or(ParseError::EOF)?;
         let left = vals.pop().ok_or(ParseError::EOF)?;
         let right = vals.pop().ok_or(ParseError::EOF)?;
         Ok(ParseValue::Reduced(AstNode::Add(Box::new(right.into()), Box::new(left.into()))))
@@ -96,7 +87,7 @@ impl Parser {
     }
 
     fn reduce_int(vals: &mut Vec<ParseValue>) -> Result<ParseValue, ParseError> {
-        let last = vals.pop().ok_or(ParseError::EOF)?;
+        let _last = vals.pop().ok_or(ParseError::EOF)?;
         Ok(ParseValue::Reduced(AstNode::Int))
     }
 
@@ -104,7 +95,7 @@ impl Parser {
         vals.last().map_or(false, |i| match i { &ParseValue::Token(TokenValue::Int) => true, _ => false })
     }
 
-    pub fn reduce<R>(&mut self, reducer: R) -> Result<(), ParseError> where R : Fn(&mut Vec<ParseValue>) -> Result<ParseValue, ParseError> {
+    fn reduce<R>(&mut self, reducer: R) -> Result<(), ParseError> where R : Fn(&mut Vec<ParseValue>) -> Result<ParseValue, ParseError> {
         let res = reducer(&mut self.pstack)?;
         self.pstack.push(res);
         Ok(())
@@ -132,13 +123,14 @@ impl Parser {
             ParseAction::Shift => self.shift(),
             ParseAction::Reduce(0) => self.reduce(Parser::reduce_add),
             ParseAction::Reduce(1) => self.reduce(Parser::reduce_int),
-            ParseAction::Stop => Err(ParseError::EOF),
+            ParseAction::Stop => {
+                self.output = self.pstack.drain(..).flat_map(|i| match i {
+                    ParseValue::Reduced(a) => Some(a),
+                    ParseValue::Token(_) => None
+                }).collect();
+                Err(ParseError::EOF)
+            }
             _ => Err(ParseError::NoActions),
         }
     }
-
-    pub fn error(&mut self) -> ParseError {
-        ParseError::NotImpl
-    }
-
 }

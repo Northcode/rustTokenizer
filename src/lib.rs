@@ -200,7 +200,7 @@ mod lib {
             tokenvals
         }
 
-        use rtok::parser::{Parser,ParseValue, AstNode};
+        use rtok::parser::{Parser,AstNode};
         use rtok::parser::TokenValue;
 
         #[test]
@@ -217,11 +217,11 @@ mod lib {
             }).collect());
 
             while parser.step().is_ok() {
-                println!("{:?}", parser.pstack);
+                parser.debug_print_stack();
             }
 
-            match parser.pstack.last() {
-                Some(&ParseValue::Reduced(AstNode::Add(..))) => {
+            match parser.output.last() {
+                Some(&AstNode::Add(..)) => {
                     assert!(true)
                 }
                 _ => assert!(false)
