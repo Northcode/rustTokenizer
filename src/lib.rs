@@ -248,7 +248,9 @@ mod lib {
 
                 // rule for add
                 parser.add_rule(
-                    expect!(t T_::Op('+'),n _,n _),
+                    expect!(t T_::Op('+'),
+                            n N_::Int(_) | n N_::Float(_) | n N_::Add(..),
+                            n N_::Int(_) | n N_::Float(_) | n N_::Add(..)),
                     reduction!(N_::Add(Box::new(left), Box::new(right)); 
                                _o -> PT_(T_::Op(_)), 
                                left -> PR_(left),
@@ -256,7 +258,9 @@ mod lib {
 
                 // rule for sub
                 parser.add_rule(
-                    expect!(t T_::Op('-'),n _, n _),
+                    expect!(t T_::Op('-'),
+                            n N_::Int(_) | n N_::Float(_) | n N_::Add(..),
+                            n N_::Int(_) | n N_::Float(_) | n N_::Add(..)),
                     reduction!(N_::Sub(Box::new(left), Box::new(right)); 
                                _o -> PT_(T_::Op(_)), 
                                left -> PR_(left),

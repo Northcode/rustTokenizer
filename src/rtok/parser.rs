@@ -98,7 +98,7 @@ macro_rules! expect_inner {
 
 #[macro_export]
 macro_rules! expect {
-    ($($type:ident $thing:pat),*) => {|stack| {
+    ($($($type:ident $thing:pat)|+),*) => {|stack| {
         let mut itr = stack.iter().rev();
 
         let mut is_match = true;
@@ -106,7 +106,9 @@ macro_rules! expect {
         $({
             {
                 is_match = is_match && (match itr.next() {
-                    Some(expect_inner!($type $thing)) => true,
+                    $(
+                        Some(expect_inner!($type $thing)) => true,
+                    )+
                     _ => false
                 })
             }
