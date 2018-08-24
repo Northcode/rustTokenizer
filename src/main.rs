@@ -95,7 +95,7 @@ type TestAstPtr = Box<TestAst>;
 
 #[derive(Debug)]
 pub enum TestAst {
-    Int(i32), Float(f32), Add(TestAstPtr, TestAstPtr), Sub(TestAstPtr, TestAstPtr), Empty
+    Int(i32), Float(f32), Value(TestAstPtr), Add(TestAstPtr, TestAstPtr), Sub(TestAstPtr, TestAstPtr), Empty
 }
 
 impl std::fmt::Display for TestAst {
@@ -106,6 +106,7 @@ impl std::fmt::Display for TestAst {
             Float(i) => write!(f, "{}", i),
             Add(a,b) => write!(f, "(+ {} {})", a, b),
             Sub(a,b) => write!(f, "(- {} {})", a, b),
+            Value(v) => write!(f, "{}", v),
             Empty => write!(f, "EMPTY"),
         }
     }
@@ -145,24 +146,29 @@ fn main() {
         // needs patterns that match the tokens
         wrap_intos!(parser; T_::Float(_), T_::Int(_));
 
+        parser.add_rule(
+            expect!(n N_::Int(_) | n N_::Float(_) | n N_::Add(..) | n N_::Sub(..)),
+            reduction!(N_::Value(Box::new(inner));
+                       inner -> PR_(inner)));
+
         // rule for add
         parser.add_rule(
-            expect!(t T_::Op('+'),
-                    n N_::Int(_) | n N_::Float(_) | n N_::Add(..) | n N_::Sub(..),
-                    n N_::Int(_) | n N_::Float(_) | n N_::Add(..) | n N_::Sub(..)),
+            expect!(n N_::Value(_),
+                    t T_::Op('+'),
+                    n N_::Value(_)),
             reduction!(N_::Add(Box::new(left), Box::new(right)); 
-                       _o -> PT_(T_::Op(_)), 
                        left -> PR_(left),
+                       _o -> PT_(T_::Op(_)), 
                        right -> PR_(right)));
 
         // rule for sub
         parser.add_rule(
-            expect!(t T_::Op('-'),
-                    n N_::Int(_) | n N_::Float(_) | n N_::Add(..) | n N_::Sub(..),
-                    n N_::Int(_) | n N_::Float(_) | n N_::Add(..) | n N_::Sub(..)),
+            expect!(n N_::Value(_),
+                    t T_::Op('-'),
+                    n N_::Value(_)),
             reduction!(N_::Sub(Box::new(left), Box::new(right)); 
-                       _o -> PT_(T_::Op(_)), 
                        left -> PR_(left),
+                       _o -> PT_(T_::Op(_)), 
                        right -> PR_(right)));
     }
 
@@ -175,11 +181,81 @@ fn main() {
 
         while parser.step().is_ok() {
             // parser.debug_print_stack();
-            parser.print_stack();
+            // parser.print_stack();
         }
 
+        let out : Vec<N_> = parser.output.drain(..).collect();
 
-        println!("{:?}", parser.output);
+
+        fn code_gen_node(buff: &mut String, node: N_) {
+            match node {
+                N_::Add(a,b) => {
+                    code_gen_node(buff, *b);
+                    write!(buff, "+");
+                    code_gen_node(buff, *a);
+                },
+                N_::Sub(a,b) => {
+                    code_gen_node(buff, *b);
+                    write!(buff, "-");
+                    code_gen_node(buff, *a);
+                },
+                N_::Value(v) => {
+                    code_gen_node(buff, *v);
+                },
+                N_::Int(a) => {
+                    write!(buff, "{}", a);
+                },
+                N_::Float(a) => {
+                    write!(buff, "{}", a);
+                },
+                N_::Empty => {
+                    write!(buff, "");
+                },
+            }
+        }
+
+        let mut output = String::new();
+        use std::fmt::Write;
+        write!(&mut output, "#include \"stdio.h\" \n\n");
+        write!(&mut output, "{}", "int main() {\n");
+        write!(&mut output, "{}", "  int res = ");
+
+        for node in out {
+            code_gen_node(&mut output, node);
+        }
+
+        write!(&mut output, "{}", "; \n printf(\"%d\", res); return 0; }");
+
+        fn write_code_to_file(s : &String) -> std::io::Result<()> {
+            use std::fs::File;
+            use std::io::Write;
+
+            let mut file = File::create("test.c")?;
+            file.write_all(s.as_bytes())?;
+
+            Ok(())
+        }
+
+        write_code_to_file(&output).expect("Failed to write code to file");
+
+        use std::process::Command;
+
+        let cmdout = Command::new("gcc")
+            .arg("-o").arg("_test")
+            .arg("test.c")
+            .output()
+            .expect("Gcc invokation failed, do you have it installed?");
+
+        let prgout = Command::new("./_test")
+            .output();
+
+        if let Err(e) = prgout {
+            println!("Program invokation failed, maybe it failed to build, displaying gcc output now...");
+            println!("GCC: {:?}", cmdout);
+        } else if let Ok(prgout) = prgout {
+            println!("Result: {}", String::from_utf8_lossy(&prgout.stdout));
+        }
+
     }
 
 

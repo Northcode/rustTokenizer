@@ -100,9 +100,8 @@ impl <T,N> std::fmt::Display for ParseValue<T,N> where T: std::fmt::Display, N: 
 
 impl <T,N> Parser<T,N> where T: std::fmt::Display, N : std::fmt::Display {
     pub fn print_stack(&self) {
-        let inputformatted = self.input.iter().map(|i| format!("{}", i)).collect::<Vec<String>>().join(",");
         let formatted = self.pstack.iter().map(|i| format!("{}", i)).collect::<Vec<String>>().join(",");
-        println!("input: {} , stack: [{}]", inputformatted, formatted);
+        println!("stack: [{}]", formatted);
         // println!("stack: {}", self.pstack);
     }
 
