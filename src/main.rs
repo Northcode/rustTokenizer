@@ -83,7 +83,7 @@ type TestAstPtr = Box<TestAst>;
 
 #[derive(Debug)]
 pub enum TestAst {
-    Int(i32), Float(f32), Add(TestAstPtr, TestAstPtr), Empty
+    Int(i32), Float(f32), Add(TestAstPtr, TestAstPtr), Sub(TestAstPtr, TestAstPtr), Empty
 }
 
 impl Into<TestAst> for TestTokenValue {
@@ -96,10 +96,12 @@ impl Into<TestAst> for TestTokenValue {
     }
 }
 
-fn main() {
-    let tokenvals = tokenize_str("1 2 +");
+use std::io;
 
-    assert_eq!(tokenvals.get(2), Some(&TestTokenValue::Op('+')));
+fn main() {
+    let tokenvals = tokenize_str("");
+
+    // assert_eq!(tokenvals.get(2), Some(&TestTokenValue::Op('+')));
 
     let mut parser : Parser<TestTokenValue, TestAst> = Parser::new(tokenvals.into_iter().rev().collect());
 
@@ -111,27 +113,46 @@ fn main() {
     {
         use rtok::parser::{ParseError, ParseValue};
 
-        // rule for floats
-        parser.add_rule(
-            expect!(t T_::Float(_)),
-            reduction!(N_::Float(i); i -> PT_(T_::Float(i))));
-        
-        // rule for ints
-        parser.add_rule(
-            expect!(t T_::Int(_)), 
-            reduction!(N_::Int(i); i -> PT_(T_::Int(i))));
+        use TestTokenValue as T_;
+        use TestAst as N_;
+
+        // auto add rules for tokens that impl Into<TestAst>
+        // needs patterns that match the tokens
+        wrap_intos!(parser; T_::Float(_), T_::Int(_));
 
         // rule for add
         parser.add_rule(
-            expect!(t T_::Op('+'),n N_::Int(_),n N_::Int(_)),
+            expect!(t T_::Op('+'),
+                    n N_::Int(_) | n N_::Float(_) | n N_::Add(..) | n N_::Sub(..),
+                    n N_::Int(_) | n N_::Float(_) | n N_::Add(..) | n N_::Sub(..)),
             reduction!(N_::Add(Box::new(left), Box::new(right)); 
+                       _o -> PT_(T_::Op(_)), 
+                       left -> PR_(left),
+                       right -> PR_(right)));
+
+        // rule for sub
+        parser.add_rule(
+            expect!(t T_::Op('-'),
+                    n N_::Int(_) | n N_::Float(_) | n N_::Add(..) | n N_::Sub(..),
+                    n N_::Int(_) | n N_::Float(_) | n N_::Add(..) | n N_::Sub(..)),
+            reduction!(N_::Sub(Box::new(left), Box::new(right)); 
                        _o -> PT_(T_::Op(_)), 
                        left -> PR_(left),
                        right -> PR_(right)));
     }
 
-    while parser.step().is_ok() {
-        parser.debug_print_stack();
+    let mut line = String::new();
+    while let Ok(n) = io::stdin().read_line(&mut line) {
+        let tokens = tokenize_str(&line);
+
+        parser.push_input(tokens.into_iter().rev().collect());
+
+        while parser.step().is_ok() {
+            parser.debug_print_stack();
+        }
+
+        parser.output.drain(..);
     }
+
 
 }

@@ -31,6 +31,12 @@ impl <T,N> Parser<T,N> {
         Parser { input, pstack: Vec::new(), output: Vec::new(), reductions: Vec::new() }
     }
 
+    pub fn push_input(&mut self, new_input: Vec<T>) {
+        let mut new_vec = new_input;
+        new_vec.append(&mut self.input);
+        self.input = new_vec;
+    }
+
     fn shift(&mut self) -> Result<(), ParseError> {
         let val = self.input.pop().ok_or(ParseError::EOF)?;
         self.pstack.push(ParseValue::Token(val));
