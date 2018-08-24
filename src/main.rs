@@ -28,7 +28,7 @@ impl std::fmt::Display for TestTokenValue {
 }
 
 fn tokenize_str(s: &str) -> Vec<TestTokenValue> {
-    let tokenizer = Tokenizer::make(MatcherPriority::Longest, vec![(r"^(\s+)", 0), (r"^(\d+)", 1), (r"^(\d+\.\d+)",2), (r"([+\-*/])", 3)]);
+    let tokenizer = Tokenizer::make(MatcherPriority::Longest, vec![(r"^(\s+)", 0), (r"^(\d+)", 1), (r"^(\d+\.\d+)",2), (r"([+\-*/^])", 3)]);
 
     let startstr = String::from(s);
 
@@ -95,7 +95,7 @@ type TestAstPtr = Box<TestAst>;
 
 #[derive(Debug)]
 pub enum TestAst {
-    Int(i32), Float(f32), Value(TestAstPtr), Add(TestAstPtr, TestAstPtr), Sub(TestAstPtr, TestAstPtr), Empty
+    Int(i32), Float(f32), Value(TestAstPtr), Add(TestAstPtr, TestAstPtr), Sub(TestAstPtr, TestAstPtr), Mul(TestAstPtr, TestAstPtr), Div(TestAstPtr, TestAstPtr), Pow(TestAstPtr, TestAstPtr), Empty
 }
 
 impl std::fmt::Display for TestAst {
@@ -106,6 +106,9 @@ impl std::fmt::Display for TestAst {
             Float(i) => write!(f, "{}", i),
             Add(a,b) => write!(f, "(+ {} {})", a, b),
             Sub(a,b) => write!(f, "(- {} {})", a, b),
+            Mul(a,b) => write!(f, "(* {} {})", a, b),
+            Div(a,b) => write!(f, "(/ {} {})", a, b),
+            Pow(a,b) => write!(f, "(^ {} {})", a, b),
             Value(v) => write!(f, "{}", v),
             Empty => write!(f, "EMPTY"),
         }
@@ -147,7 +150,7 @@ fn main() {
         wrap_intos!(parser; T_::Float(_), T_::Int(_));
 
         parser.add_rule(
-            expect!(n N_::Int(_) | n N_::Float(_) | n N_::Add(..) | n N_::Sub(..)),
+            expect!(n N_::Int(_) | n N_::Float(_) | n N_::Add(..) | n N_::Sub(..)| n N_::Mul(..) | n N_::Div(..) | n N_::Pow(..)),
             reduction!(N_::Value(Box::new(inner));
                        inner -> PR_(inner)));
 
@@ -170,6 +173,36 @@ fn main() {
                        left -> PR_(left),
                        _o -> PT_(T_::Op(_)), 
                        right -> PR_(right)));
+
+        // rule for mul
+        parser.add_rule(
+            expect!(n N_::Value(_),
+                    t T_::Op('*'),
+                    n N_::Value(_)),
+            reduction!(N_::Mul(Box::new(left), Box::new(right)); 
+                       left -> PR_(left),
+                       _o -> PT_(T_::Op(_)), 
+                       right -> PR_(right)));
+
+        // rule for div
+        parser.add_rule(
+            expect!(n N_::Value(_),
+                    t T_::Op('/'),
+                    n N_::Value(_)),
+            reduction!(N_::Div(Box::new(left), Box::new(right)); 
+                       left -> PR_(left),
+                       _o -> PT_(T_::Op(_)), 
+                       right -> PR_(right)));
+
+        // rule for pow
+        parser.add_rule(
+            expect!(n N_::Value(_),
+                    t T_::Op('^'),
+                    n N_::Value(_)),
+            reduction!(N_::Pow(Box::new(left), Box::new(right)); 
+                       left -> PR_(left),
+                       _o -> PT_(T_::Op(_)), 
+                       right -> PR_(right)));
     }
 
     let mut line = String::new();
@@ -181,7 +214,7 @@ fn main() {
 
         while parser.step().is_ok() {
             // parser.debug_print_stack();
-            // parser.print_stack();
+            parser.print_stack();
         }
 
         let out : Vec<N_> = parser.output.drain(..).collect();
@@ -198,6 +231,23 @@ fn main() {
                     code_gen_node(buff, *b);
                     write!(buff, "-");
                     code_gen_node(buff, *a);
+                },
+                N_::Mul(a,b) => {
+                    code_gen_node(buff, *b);
+                    write!(buff, "{}", "*");
+                    code_gen_node(buff, *a);
+                },
+                N_::Div(a,b) => {
+                    code_gen_node(buff, *b);
+                    write!(buff, "/");
+                    code_gen_node(buff, *a);
+                },
+                N_::Pow(a,b) => {
+                    write!(buff, "pow(");
+                    code_gen_node(buff, *b);
+                    write!(buff, ",");
+                    code_gen_node(buff, *a);
+                    write!(buff, ")");
                 },
                 N_::Value(v) => {
                     code_gen_node(buff, *v);
@@ -216,7 +266,7 @@ fn main() {
 
         let mut output = String::new();
         use std::fmt::Write;
-        write!(&mut output, "#include \"stdio.h\" \n\n");
+        write!(&mut output, "#include \"stdio.h\"\n#include \"math.h\" \n\n");
         write!(&mut output, "{}", "int main() {\n");
         write!(&mut output, "{}", "  int res = ");
 
@@ -224,7 +274,7 @@ fn main() {
             code_gen_node(&mut output, node);
         }
 
-        write!(&mut output, "{}", "; \n printf(\"%d\", res); return 0; }");
+        write!(&mut output, "{}", "; \n printf(\"%d\", res); return 0; }\n");
 
         fn write_code_to_file(s : &String) -> std::io::Result<()> {
             use std::fs::File;
