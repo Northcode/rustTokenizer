@@ -15,6 +15,18 @@ enum TestTokenValue {
     Whitespace
 }
 
+impl std::fmt::Display for TestTokenValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use TestTokenValue::*;
+        match self {
+            Int(i) => write!(f, "{}", i),
+            Float(i) => write!(f, "{}", i),
+            Op(i) => write!(f, "{}", i),
+            Whitespace => write!(f, " "),
+        }
+    }
+}
+
 fn tokenize_str(s: &str) -> Vec<TestTokenValue> {
     let tokenizer = Tokenizer::make(MatcherPriority::Longest, vec![(r"^(\s+)", 0), (r"^(\d+)", 1), (r"^(\d+\.\d+)",2), (r"([+\-*/])", 3)]);
 
@@ -86,6 +98,19 @@ pub enum TestAst {
     Int(i32), Float(f32), Add(TestAstPtr, TestAstPtr), Sub(TestAstPtr, TestAstPtr), Empty
 }
 
+impl std::fmt::Display for TestAst {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use TestAst::*;
+        match self {
+            Int(i) => write!(f, "{}", i),
+            Float(i) => write!(f, "{}", i),
+            Add(a,b) => write!(f, "(+ {} {})", a, b),
+            Sub(a,b) => write!(f, "(- {} {})", a, b),
+            Empty => write!(f, "EMPTY"),
+        }
+    }
+}
+
 impl Into<TestAst> for TestTokenValue {
     fn into(self) -> TestAst {
         match self {
@@ -144,14 +169,17 @@ fn main() {
     let mut line = String::new();
     while let Ok(n) = io::stdin().read_line(&mut line) {
         let tokens = tokenize_str(&line);
+        line.clear();
 
         parser.push_input(tokens.into_iter().rev().collect());
 
         while parser.step().is_ok() {
-            parser.debug_print_stack();
+            // parser.debug_print_stack();
+            parser.print_stack();
         }
 
-        parser.output.drain(..);
+
+        println!("{:?}", parser.output);
     }
 
 

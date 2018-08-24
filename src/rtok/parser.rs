@@ -33,7 +33,7 @@ impl <T,N> Parser<T,N> {
 
     pub fn push_input(&mut self, new_input: Vec<T>) {
         let mut new_vec = new_input;
-        new_vec.append(&mut self.input);
+        // new_vec.append(&mut self.input);
         self.input = new_vec;
     }
 
@@ -89,12 +89,32 @@ impl <T,N> Parser<T,N> {
 
 extern crate std;
 
+impl <T,N> std::fmt::Display for ParseValue<T,N> where T: std::fmt::Display, N: std::fmt::Display {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ParseValue::Token(t) => write!(f, "{}", t),
+            ParseValue::Reduced(r) => write!(f, "{}", r),
+        }
+    }
+}
+
+impl <T,N> Parser<T,N> where T: std::fmt::Display, N : std::fmt::Display {
+    pub fn print_stack(&self) {
+        let inputformatted = self.input.iter().map(|i| format!("{}", i)).collect::<Vec<String>>().join(",");
+        let formatted = self.pstack.iter().map(|i| format!("{}", i)).collect::<Vec<String>>().join(",");
+        println!("input: {} , stack: [{}]", inputformatted, formatted);
+        // println!("stack: {}", self.pstack);
+    }
+
+}
+
 impl <T,N> Parser<T,N> where T: std::fmt::Debug, N : std::fmt::Debug {
     pub fn debug_print_stack(&self) {
         println!("stack: {:?}", self.pstack);
     }
 
 }
+
 
 #[macro_export]
 macro_rules! expect_inner {
