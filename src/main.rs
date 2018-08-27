@@ -5,38 +5,55 @@ mod rtok;
 
 use rtok::tokenizer::{Tokenizer, MatcherPriority, Token};
 use rtok::tokenizer::postproc::{BasicPostProcessor, PostProcessor, PostprocErr};
+use rtok::parser::{Parser};
 
 #[derive(Debug)]
-#[derive(PartialEq)]
-enum TestTokenValue {
-    Int(i32),
-    Float(f32),
-    Op(char),
-    Whitespace
+pub enum TokenType {
+    Ident(String), Literal(String), Assign, LeftPar, RightPar, Star
 }
 
-impl std::fmt::Display for TestTokenValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use TestTokenValue::*;
+type AstPtr = Box<EBNFAst>;
+type AstVec = Vec<AstPtr>;
+#[derive(Debug)]
+pub enum EBNFAst {
+    Ident(String), Literal(String), Definition(AstPtr, AstPtr), Single(AstPtr), Double(AstPtr,AstPtr), OptionalLast(AstPtr, AstPtr), Or(AstPtr,AstPtr), Assign, LeftPar, RightPar, Star
+}
+
+impl Into<EBNFAst> for TokenType {
+    fn into(self) -> EBNFAst {
         match self {
-            Int(i) => write!(f, "{}", i),
-            Float(i) => write!(f, "{}", i),
-            Op(i) => write!(f, "{}", i),
-            Whitespace => write!(f, " "),
+            TokenType::Ident(s)   => EBNFAst::Ident(s),
+            TokenType::Literal(s) => EBNFAst::Literal(s),
+            TokenType::Assign     => EBNFAst::Assign,
+            TokenType::LeftPar    => EBNFAst::LeftPar,
+            TokenType::RightPar   => EBNFAst::RightPar,
+            TokenType::Star       => EBNFAst::Star,
         }
     }
 }
 
-fn tokenize_str(s: &str) -> Vec<TestTokenValue> {
-    let tokenizer = Tokenizer::make(MatcherPriority::Longest, vec![(r"^(\s+)", 0), (r"^(\d+)", 1), (r"^(\d+\.\d+)",2), (r"([+\-*/^])", 3)]);
+// use std::fmt::{Formatter, Display};
 
-    let startstr = String::from(s);
+// impl Display for EBNFAst {
+//     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        
+//     }
+// }
 
-    let tokens = tokenizer.tokenize(&startstr);
+use std::io;
 
+fn main() {
+    let input = String::from("expr ::= VARIABLE");
 
+    let tokenizer = Tokenizer::make(MatcherPriority::Longest, vec![(r"^(\s+)", 0), 
+                                                                   (r"^([a-zA-Z0-9\-_]+)", 1), 
+                                                                   (r"^'([^']+)'", 2),
+                                                                   (r"^(::=)", 3),
+                                                                   (r"^(\()", 4),
+                                                                   (r"^(\))", 5),
+                                                                   (r"^(\*)", 6)]);
+                                    
     let mut postproc = BasicPostProcessor::new();
-
 
     fn get_token_part<'a>(t: &'a Token, i: usize) -> Result<&'a str, PostprocErr> {
         if let Some(Some(part)) = t.parts.get(i) {
@@ -46,267 +63,72 @@ fn tokenize_str(s: &str) -> Vec<TestTokenValue> {
         }
     }
 
-    postproc.add_postprocfn(0, |_| {
-        Ok(TestTokenValue::Whitespace)
-    });
-
     postproc.add_postprocfn(1, |t| {
-        let tokenstr = get_token_part(&t, 1)?;
-        tokenstr.parse()
-            .map(|i| TestTokenValue::Int(i))
-            .or(PostprocErr::make(t.typ, "Failed to parse token as int".to_string()))
+        let id = get_token_part(&t, 1)?;
+        Ok(TokenType::Ident(id.to_string()))
     });
 
     postproc.add_postprocfn(2, |t| {
-        let tokenstr = get_token_part(&t, 1)?;
-
-        tokenstr.parse()
-            .map(|i| TestTokenValue::Float(i))
-            .or(PostprocErr::make(t.typ, "Failed to parse token as float".to_string()))
-    });
-    postproc.add_postprocfn(3, |t| {
-        let tokenstr = get_token_part(&t, 1)?;
-
-        tokenstr.chars().nth(0)
-            .map(|i| TestTokenValue::Op(i))
-            .ok_or(PostprocErr::new(t.typ, "Failed to get operator from token".to_string()))
+        let id = get_token_part(&t, 1)?;
+        Ok(TokenType::Literal(id.to_string()))
     });
 
-
-    fn not_whitespace(t: &Result<TestTokenValue,PostprocErr>) -> bool {
-        match t {
-            Ok(TestTokenValue::Whitespace) => false,
-            _ => true
-        }
+    postproc.add_postprocfn(3, |_| {Ok(TokenType::Assign)});
+    postproc.add_postprocfn(4, |_| {Ok(TokenType::LeftPar)});
+    postproc.add_postprocfn(5, |_| {Ok(TokenType::RightPar)});
+    postproc.add_postprocfn(6, |_| {Ok(TokenType::Star)});
+ 
+    fn not_whitespace(t: &Token) -> bool {
+        t.typ != 0
     }
 
-    let tokenvals : Vec<TestTokenValue> = tokens.into_iter()
+    let tokens : Vec<TokenType> = tokenizer.tokenize(&input)
+        .into_iter()
+        .filter(not_whitespace)
         .map(|i| postproc.run_on(i))
-        .flat_map(|i| { i.into_iter() })
-        .filter(|i| i != &TestTokenValue::Whitespace)
+        .flat_map(|i| i.into_iter())
+        .rev()
         .collect();
 
-    tokenvals
-}
-
-use rtok::parser::{Parser};
-
-type TestAstPtr = Box<TestAst>;
-
-#[derive(Debug)]
-pub enum TestAst {
-    Int(i32), Float(f32), Value(TestAstPtr), Add(TestAstPtr, TestAstPtr), Sub(TestAstPtr, TestAstPtr), Mul(TestAstPtr, TestAstPtr), Div(TestAstPtr, TestAstPtr), Pow(TestAstPtr, TestAstPtr), Empty
-}
-
-impl std::fmt::Display for TestAst {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use TestAst::*;
-        match self {
-            Int(i) => write!(f, "{}", i),
-            Float(i) => write!(f, "{}", i),
-            Add(a,b) => write!(f, "(+ {} {})", a, b),
-            Sub(a,b) => write!(f, "(- {} {})", a, b),
-            Mul(a,b) => write!(f, "(* {} {})", a, b),
-            Div(a,b) => write!(f, "(/ {} {})", a, b),
-            Pow(a,b) => write!(f, "(^ {} {})", a, b),
-            Value(v) => write!(f, "{}", v),
-            Empty => write!(f, "EMPTY"),
-        }
-    }
-}
-
-impl Into<TestAst> for TestTokenValue {
-    fn into(self) -> TestAst {
-        match self {
-            TestTokenValue::Int(i) => TestAst::Int(i),
-            TestTokenValue::Float(i) => TestAst::Float(i),
-            _ => TestAst::Empty
-        }
-    }
-}
-
-use std::io;
-
-fn main() {
-    let tokenvals = tokenize_str("");
-
-    // assert_eq!(tokenvals.get(2), Some(&TestTokenValue::Op('+')));
-
-    let mut parser : Parser<TestTokenValue, TestAst> = Parser::new(tokenvals.into_iter().rev().collect());
-
-    use self::TestTokenValue as T_;
-    use self::TestAst as N_;
-    use rtok::parser::ParseValue::Token as PT_;
-    use rtok::parser::ParseValue::Reduced as PR_;
+    let mut parser : Parser<TokenType, EBNFAst> = Parser::new(tokens);
 
     {
         use rtok::parser::{ParseError, ParseValue};
+        use self::TokenType as T;
+        use self::EBNFAst as N;
+        use rtok::parser::ParseValue::Token as PT;
+        use rtok::parser::ParseValue::Reduced as PR;
 
-        use TestTokenValue as T_;
-        use TestAst as N_;
+        wrap_intos!(parser; T::Ident(_), T::Literal(_), T::Assign, T::LeftPar, T::RightPar, T::Star);
 
-        // auto add rules for tokens that impl Into<TestAst>
-        // needs patterns that match the tokens
-        wrap_intos!(parser; T_::Float(_), T_::Int(_));
+        // rule for Definition
+        parser.add_rule(
+            expect!(n N::Single(..) | n N::Double(..) | n N::OptionalLast(..) | n N::Or(..),
+                    n N::Assign,
+                    n N::Single(_)),
+            reduction!(N::Definition(Box::new(id), Box::new(expr));
+                       PR(expr), PR(N::Assign), PR(id)));
 
         parser.add_rule(
-            expect!(n N_::Int(_) | n N_::Float(_) | n N_::Add(..) | n N_::Sub(..)| n N_::Mul(..) | n N_::Div(..) | n N_::Pow(..)),
-            reduction!(N_::Value(Box::new(inner));
-                       inner -> PR_(inner)));
-
-        // rule for add
-        parser.add_rule(
-            expect!(n N_::Value(_),
-                    t T_::Op('+'),
-                    n N_::Value(_)),
-            reduction!(N_::Add(Box::new(left), Box::new(right)); 
-                       left -> PR_(left),
-                       _o -> PT_(T_::Op(_)), 
-                       right -> PR_(right)));
-
-        // rule for sub
-        parser.add_rule(
-            expect!(n N_::Value(_),
-                    t T_::Op('-'),
-                    n N_::Value(_)),
-            reduction!(N_::Sub(Box::new(left), Box::new(right)); 
-                       left -> PR_(left),
-                       _o -> PT_(T_::Op(_)), 
-                       right -> PR_(right)));
-
-        // rule for mul
-        parser.add_rule(
-            expect!(n N_::Value(_),
-                    t T_::Op('*'),
-                    n N_::Value(_)),
-            reduction!(N_::Mul(Box::new(left), Box::new(right)); 
-                       left -> PR_(left),
-                       _o -> PT_(T_::Op(_)), 
-                       right -> PR_(right)));
-
-        // rule for div
-        parser.add_rule(
-            expect!(n N_::Value(_),
-                    t T_::Op('/'),
-                    n N_::Value(_)),
-            reduction!(N_::Div(Box::new(left), Box::new(right)); 
-                       left -> PR_(left),
-                       _o -> PT_(T_::Op(_)), 
-                       right -> PR_(right)));
-
-        // rule for pow
-        parser.add_rule(
-            expect!(n N_::Value(_),
-                    t T_::Op('^'),
-                    n N_::Value(_)),
-            reduction!(N_::Pow(Box::new(left), Box::new(right)); 
-                       left -> PR_(left),
-                       _o -> PT_(T_::Op(_)), 
-                       right -> PR_(right)));
+            expect!(n N::Ident(_) | n N::Literal(_)),
+            reduction!(N::Single(Box::new(val));
+                       PR(val)));
     }
 
-    let mut line = String::new();
-    while let Ok(n) = io::stdin().read_line(&mut line) {
-        let tokens = tokenize_str(&line);
-        line.clear();
+    loop {
+        let res = parser.step();
 
-        parser.push_input(tokens.into_iter().rev().collect());
+        parser.debug_print_stack();
 
-        while parser.step().is_ok() {
-            // parser.debug_print_stack();
-            parser.print_stack();
-        }
-
-        let out : Vec<N_> = parser.output.drain(..).collect();
-
-
-        fn code_gen_node(buff: &mut String, node: N_) {
-            match node {
-                N_::Add(a,b) => {
-                    code_gen_node(buff, *b);
-                    write!(buff, "+");
-                    code_gen_node(buff, *a);
-                },
-                N_::Sub(a,b) => {
-                    code_gen_node(buff, *b);
-                    write!(buff, "-");
-                    code_gen_node(buff, *a);
-                },
-                N_::Mul(a,b) => {
-                    code_gen_node(buff, *b);
-                    write!(buff, "{}", "*");
-                    code_gen_node(buff, *a);
-                },
-                N_::Div(a,b) => {
-                    code_gen_node(buff, *b);
-                    write!(buff, "/");
-                    code_gen_node(buff, *a);
-                },
-                N_::Pow(a,b) => {
-                    write!(buff, "pow(");
-                    code_gen_node(buff, *b);
-                    write!(buff, ",");
-                    code_gen_node(buff, *a);
-                    write!(buff, ")");
-                },
-                N_::Value(v) => {
-                    code_gen_node(buff, *v);
-                },
-                N_::Int(a) => {
-                    write!(buff, "{}", a);
-                },
-                N_::Float(a) => {
-                    write!(buff, "{}", a);
-                },
-                N_::Empty => {
-                    write!(buff, "");
-                },
+        match res {
+            Ok(true) => continue,
+            Ok(false) => break,
+            Err(e) => {
+                println!("parse error: {:?}", e);
+                break;
             }
         }
-
-        let mut output = String::new();
-        use std::fmt::Write;
-        write!(&mut output, "#include \"stdio.h\"\n#include \"math.h\" \n\n");
-        write!(&mut output, "{}", "int main() {\n");
-        write!(&mut output, "{}", "  int res = ");
-
-        for node in out {
-            code_gen_node(&mut output, node);
-        }
-
-        write!(&mut output, "{}", "; \n printf(\"%d\", res); return 0; }\n");
-
-        fn write_code_to_file(s : &String) -> std::io::Result<()> {
-            use std::fs::File;
-            use std::io::Write;
-
-            let mut file = File::create("test.c")?;
-            file.write_all(s.as_bytes())?;
-
-            Ok(())
-        }
-
-        write_code_to_file(&output).expect("Failed to write code to file");
-
-        use std::process::Command;
-
-        let cmdout = Command::new("gcc")
-            .arg("-o").arg("_test")
-            .arg("test.c")
-            .output()
-            .expect("Gcc invokation failed, do you have it installed?");
-
-        let prgout = Command::new("./_test")
-            .output();
-
-        if let Err(e) = prgout {
-            println!("Program invokation failed, maybe it failed to build, displaying gcc output now...");
-            println!("GCC: {:?}", cmdout);
-        } else if let Ok(prgout) = prgout {
-            println!("Result: {}", String::from_utf8_lossy(&prgout.stdout));
-        }
-
     }
 
-
+    println!("{:?}", parser.output);
 }

@@ -21,6 +21,7 @@ enum ParseAction {
     Stop,
 }
 
+#[derive(Debug)]
 pub enum ParseError {
     EOF, NoActions, InvalidReduction(usize), InvalidToken, NotImpl
 }
@@ -70,18 +71,19 @@ impl <T,N> Parser<T,N> {
         }
     }
 
-    pub fn step(&mut self) -> Result<(), ParseError> {
+    pub fn step(&mut self) -> Result<bool, ParseError> {
         let action = self.determine_action();
 
         match action {
-            ParseAction::Shift => self.shift(),
-            ParseAction::Reduce(n) => self.reduce(n),
+            ParseAction::Shift => self.shift().map(|_| true),
+            ParseAction::Reduce(n) => self.reduce(n).map(|_| true),
             ParseAction::Stop => {
+                println!("Parser stop");
                 self.output = self.pstack.drain(..).flat_map(|i| match i {
                     ParseValue::Reduced(a) => Some(a),
                     ParseValue::Token(_) => None
                 }).collect();
-                Err(ParseError::EOF)
+                Ok(false)
             }
         }
     }
@@ -109,7 +111,8 @@ impl <T,N> Parser<T,N> where T: std::fmt::Display, N : std::fmt::Display {
 
 impl <T,N> Parser<T,N> where T: std::fmt::Debug, N : std::fmt::Debug {
     pub fn debug_print_stack(&self) {
-        println!("stack: {:?}", self.pstack);
+        // println!("input: {:?}, stack: {:?}, out: {:?}", self.input, self.pstack, self.output);
+        println!("stack: {:?}",  self.pstack);
     }
 
 }
@@ -149,14 +152,14 @@ macro_rules! reduction_inner {
     ($inner:expr) => {
         return Ok(ParseValue::Reduced($inner))
     };
-    ($stack:ident $inner:expr; $id:ident $pat:pat) => {
+    ($stack:ident $inner:expr; $pat:pat) => {
         if let $pat = $stack.pop().ok_or(ParseError::EOF)? {
             reduction_inner!($inner);
         }
     };
-    ($stack:ident $inner:expr; $id_first:ident $pat_first:pat, $($id_tail:ident $pat_tail:pat),*) => {
+    ($stack:ident $inner:expr; $pat_first:pat, $($pat_tail:pat),*) => {
         if let $pat_first = $stack.pop().ok_or(ParseError::EOF)? {
-            reduction_inner!($stack $inner; $($id_tail $pat_tail),*)
+            reduction_inner!($stack $inner; $($pat_tail),*)
         }
     };
 }
@@ -164,16 +167,16 @@ macro_rules! reduction_inner {
 #[allow(unused_macros)]
 #[macro_export]
 macro_rules! reduction {
-    ($inner:expr; $id:ident -> $pat:pat) => {
+    ($inner:expr; $pat:pat) => {
         |stack| {
-            reduction_inner!(stack $inner; $id $pat);
+            reduction_inner!(stack $inner; $pat);
 
             return Err(ParseError::InvalidToken);
         }
     };
-    ($inner:expr; $id_first:ident -> $pat_first:pat, $($id_tail:ident -> $pat_tail:pat),*) => {
+    ($inner:expr; $pat_first:pat, $($pat_tail:pat),*) => {
         |stack| {
-            reduction_inner!(stack $inner; $id_first $pat_first, $($id_tail $pat_tail),*);
+            reduction_inner!(stack $inner; $pat_first, $($pat_tail),*);
 
             return Err(ParseError::InvalidToken);
         }
@@ -186,7 +189,7 @@ macro_rules! wrap_intos {
         $(
             $parser.add_rule(
                 expect!(t $wrapper),
-                reduction!(i.into(); i -> ParseValue::Token(i)));
+                reduction!(i.into(); ParseValue::Token(i)));
         )*
     }
 }
